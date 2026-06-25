@@ -1,402 +1,119 @@
-"use client"
+"use client";
 
-import { useEffect, useState } from "react"
-import {
-  formatBytes,
-  useFileUpload,
-  type FileMetadata,
-  type FileWithPreview,
-} from "@/hooks/use-file-upload"
-// import {
-//   Alert,
-//   AlertAction,
-//   AlertDescription,
-//   AlertTitle,
-// } from "@/components/reui/alert"
-// import { Badge } from "@/components/reui/badge"
+import { useCallback } from "react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { XIcon, CloudUpload } from "lucide-react";
+import { cn } from "@/lib/utils";
 
-import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
-import { Progress } from "@/components/ui/progress"
-import { CircleAlertIcon, FileArchiveIcon, FileSpreadsheetIcon, FileTextIcon, HeadphonesIcon, ImageIcon, RefreshCwIcon, UploadIcon, VideoIcon, XIcon } from 'lucide-react'
-
-interface FileUploadItem extends FileWithPreview {
-  progress: number
-  status: "uploading" | "completed" | "error"
-  error?: string
+export interface ImageFile {
+  id: string;
+  file: File;
+  preview: string;
 }
 
-interface ProgressUploadProps {
-  maxFiles?: number
-  maxSize?: number
-  accept?: string
-  multiple?: boolean
-  className?: string
-  onFilesChange?: (files: FileWithPreview[]) => void
-  simulateUpload?: boolean
+interface Props {
+  images: ImageFile[];
+  onImagesChange: (images: ImageFile[]) => void;
+  maxFiles?: number;
+  maxSize?: number;
+  className?: string;
 }
 
-export function Pattern({
-  maxFiles = 5,
-  maxSize = 10 * 1024 * 1024, // 10MB
-  accept = "*",
-  multiple = true,
+export default function ImageUpload({
+  images,
+  onImagesChange,
+  maxFiles = 10,
+  maxSize = 2 * 1024 * 1024,
   className,
-  onFilesChange,
-  simulateUpload = true,
-}: ProgressUploadProps) {
-  // Create default images using FileMetadata type
-  const defaultImages: FileMetadata[] = [
-    {
-      id: "default-3",
-      name: "image-1.png",
-      size: 42048,
-      type: "image/png",
-      url: "https://picsum.photos/1000/800?grayscale&random=10",
+}: Props) {
+  const addImages = useCallback(
+    (files: FileList | File[]) => {
+      const newImages: ImageFile[] = [];
+
+      Array.from(files).forEach((file) => {
+        if (!file.type.startsWith("image/")) return;
+        if (file.size > maxSize) return;
+        if (images.length + newImages.length >= maxFiles) return;
+
+        newImages.push({
+          id: crypto.randomUUID(),
+          file,
+          preview: URL.createObjectURL(file),
+        });
+      });
+
+      onImagesChange([...images, ...newImages]);
     },
-    {
-      id: "default-4",
-      name: "image-2.png",
-      size: 62807,
-      type: "image/png",
-      url: "https://picsum.photos/1000/800?grayscale&random=11",
-    },
-  ]
+    [images, maxFiles, maxSize, onImagesChange],
+  );
 
-  // Convert default images to FileUploadItem format
-  const defaultUploadFiles: FileUploadItem[] = defaultImages.map((image) => ({
-    id: image.id,
-    file: {
-      name: image.name,
-      size: image.size,
-      type: image.type,
-    } as File,
-    preview: image.url,
-    progress: 100,
-    status: "completed" as const,
-  }))
+  const removeImage = (id: string) => {
+    onImagesChange(
+      images.filter((img) => {
+        if (img.id === id) URL.revokeObjectURL(img.preview);
+        return img.id !== id;
+      }),
+    );
+  };
 
-  const [uploadFiles, setUploadFiles] =
-    useState<FileUploadItem[]>(defaultUploadFiles)
+  const openFileDialog = () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.multiple = true;
+    input.accept = "image/*";
 
-  const [
-    { isDragging, errors },
-    {
-      removeFile,
-      clearFiles,
-      handleDragEnter,
-      handleDragLeave,
-      handleDragOver,
-      handleDrop,
-      openFileDialog,
-      getInputProps,
-    },
-  ] = useFileUpload({
-    maxFiles,
-    maxSize,
-    accept,
-    multiple,
-    initialFiles: defaultImages,
-    onFilesChange: (newFiles) => {
-      // Convert to upload items when files change, preserving existing status
-      const newUploadFiles = newFiles.map((file) => {
-        // Check if this file already exists in uploadFiles
-        const existingFile = uploadFiles.find(
-          (existing) => existing.id === file.id
-        )
+    input.onchange = (e) => {
+      const target = e.target as HTMLInputElement;
+      if (target.files) addImages(target.files);
+    };
 
-        if (existingFile) {
-          // Preserve existing file status and progress
-          return {
-            ...existingFile,
-            ...file, // Update any changed properties from the file
-          }
-        } else {
-          // New file - set to uploading
-          return {
-            ...file,
-            progress: 0,
-            status: "uploading" as const,
-          }
-        }
-      })
-      setUploadFiles(newUploadFiles)
-      onFilesChange?.(newFiles)
-    },
-  })
+    input.click();
+  };
 
-  // Simulate upload progress
-  useEffect(() => {
-    if (!simulateUpload) return
-
-    const interval = setInterval(() => {
-      setUploadFiles((prev) =>
-        prev.map((file) => {
-          if (file.status !== "uploading") return file
-
-          const increment = Math.random() * 15 + 5 // 5-20% increment
-          const newProgress = Math.min(file.progress + increment, 100)
-
-          // Simulate occasional errors (10% chance when progress > 50%)
-          if (newProgress > 50 && Math.random() < 0.1) {
-            return {
-              ...file,
-              status: "error" as const,
-              error: "Upload failed. Please try again.",
-            }
-          }
-
-          // Complete when progress reaches 100%
-          if (newProgress >= 100) {
-            return {
-              ...file,
-              progress: 100,
-              status: "completed" as const,
-            }
-          }
-
-          return {
-            ...file,
-            progress: newProgress,
-          }
-        })
-      )
-    }, 500)
-
-    return () => clearInterval(interval)
-  }, [simulateUpload])
-
-  const retryUpload = (fileId: string) => {
-    setUploadFiles((prev) =>
-      prev.map((file) =>
-        file.id === fileId
-          ? {
-              ...file,
-              progress: 0,
-              status: "uploading" as const,
-              error: undefined,
-            }
-          : file
-      )
-    )
-  }
-
-  const removeUploadFile = (fileId: string) => {
-    setUploadFiles((prev) => prev.filter((file) => file.id !== fileId))
-    removeFile(fileId)
-  }
-
-  const getFileIcon = (file: File | FileMetadata) => {
-    const type = file instanceof File ? file.type : file.type
-    if (type.startsWith("image/"))
-      return (
-        <ImageIcon  className="size-4" />
-      )
-    if (type.startsWith("video/"))
-      return (
-        <VideoIcon  className="size-4" />
-      )
-    if (type.startsWith("audio/"))
-      return (
-        <HeadphonesIcon  className="size-4" />
-      )
-    if (type.includes("pdf"))
-      return (
-        <FileTextIcon  className="size-4" />
-      )
-    if (type.includes("word") || type.includes("doc"))
-      return (
-        <FileTextIcon  className="size-4" />
-      )
-    if (type.includes("excel") || type.includes("sheet"))
-      return (
-        <FileSpreadsheetIcon  className="size-4" />
-      )
-    if (type.includes("zip") || type.includes("rar"))
-      return (
-        <FileArchiveIcon  className="size-4" />
-      )
-    return (
-      <FileTextIcon  className="size-4" />
-    )
-  }
-
-  const completedCount = uploadFiles.filter(
-    (f) => f.status === "completed"
-  ).length
-  const errorCount = uploadFiles.filter((f) => f.status === "error").length
-  const uploadingCount = uploadFiles.filter(
-    (f) => f.status === "uploading"
-  ).length
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    addImages(e.dataTransfer.files);
+  };
 
   return (
-    <div className={cn("w-full max-w-2xl", className)}>
-      {/* Upload Area */}
-      <div
-        className={cn(
-          "rounded-lg relative border border-dashed p-8 text-center transition-colors",
-          isDragging
-            ? "border-primary bg-primary/5"
-            : "border-muted-foreground/25 hover:border-muted-foreground/50"
-        )}
-        onDragEnter={handleDragEnter}
-        onDragLeave={handleDragLeave}
-        onDragOver={handleDragOver}
-        onDrop={handleDrop}
-      >
-        <input {...getInputProps()} className="sr-only" />
+    <div className={cn("w-full", className)}>
+      {images.length > 0 && (
+        <div className="grid grid-cols-4 gap-2 mb-4">
+          {images.map((img) => (
+            <Card key={img.id} className="relative group">
+              <img
+                src={img.preview}
+                className="h-24 w-full object-cover rounded-md"
+              />
 
-        <div className="flex flex-col items-center gap-4">
-          <div
-            className={cn(
-              "flex h-16 w-16 items-center justify-center rounded-full",
-              isDragging ? "bg-primary/10" : "bg-muted"
-            )}
-          >
-            <UploadIcon />
-          </div>
-
-          <div className="space-y-2">
-            <h3 className="text-lg font-semibold">Upload your files</h3>
-            <p className="text-muted-foreground text-sm">
-              Drag and drop files here or click to browse
-            </p>
-            <p className="text-muted-foreground text-xs">
-              Support for multiple file types up to {formatBytes(maxSize)} each
-            </p>
-          </div>
-
-          <Button onClick={openFileDialog}>
-            <UploadIcon  className="h-4 w-4" />
-            Select files
-          </Button>
-        </div>
-      </div>
-
-      {/* Upload Stats */}
-      {uploadFiles.length > 0 && (
-        <div className="mt-6 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <h4 className="text-sm font-medium">Upload Progress</h4>
-            <div className="flex items-center gap-2">
-              {completedCount > 0 && (
-                <Badge size="sm" variant="success-light">
-                  Completed: {completedCount}
-                </Badge>
-              )}
-              {errorCount > 0 && (
-                <Badge size="sm" variant="destructive">
-                  Failed: {errorCount}
-                </Badge>
-              )}
-              {uploadingCount > 0 && (
-                <Badge size="sm" variant="secondary">
-                  Uploading: {uploadingCount}
-                </Badge>
-              )}
-            </div>
-          </div>
-
-          <Button onClick={clearFiles} variant="outline" size="sm">
-            Clear all
-          </Button>
-        </div>
-      )}
-
-      {/* File List */}
-      {uploadFiles.length > 0 && (
-        <div className="mt-4 space-y-3">
-          {uploadFiles.map((fileItem: FileUploadItem) => (
-            <div
-              key={fileItem.id}
-              className="border-border bg-card rounded-lg border p-2.5"
-            >
-              <div className="flex items-start gap-2.5">
-                {/* File Icon */}
-                <div className="shrink-0">
-                  {fileItem.preview &&
-                  fileItem.file.type.startsWith("image/") ? (
-                    <img
-                      src={fileItem.preview}
-                      alt={fileItem.file.name}
-                      className="rounded-lg h-12 w-12 border object-cover"
-                    />
-                  ) : (
-                    <div className="border-border text-muted-foreground rounded-lg flex h-12 w-12 items-center justify-center border">
-                      {getFileIcon(fileItem.file)}
-                    </div>
-                  )}
-                </div>
-
-                {/* File Info */}
-                <div className="min-w-0 flex-1">
-                  <div className="mt-0.75 flex items-center justify-between">
-                    <p className="inline-flex flex-col justify-center gap-1 truncate font-medium">
-                      <span className="text-sm">{fileItem.file.name}</span>
-                      <span className="text-muted-foreground text-xs">
-                        {formatBytes(fileItem.file.size)}
-                      </span>
-                    </p>
-                    <div className="flex items-center gap-2">
-                      {/* Remove Button */}
-                      <Button
-                        onClick={() => removeUploadFile(fileItem.id)}
-                        variant="ghost"
-                        size="icon"
-                        className="text-muted-foreground size-6 hover:bg-transparent hover:opacity-100"
-                      >
-                        <XIcon  className="size-4" />
-                      </Button>
-                    </div>
-                  </div>
-
-                  {/* Progress Bar */}
-                  {fileItem.status === "uploading" && (
-                    <div className="mt-2">
-                      <Progress value={fileItem.progress} className="h-1" />
-                    </div>
-                  )}
-
-                  {/* Error Message */}
-                  {fileItem.status === "error" && fileItem.error && (
-                    <Alert variant="destructive" className="mt-2 px-2 py-1">
-                      <CircleAlertIcon  className="size-4" />
-                      <AlertTitle className="text-xs">
-                        {fileItem.error}
-                      </AlertTitle>
-                      <AlertAction>
-                        <Button
-                          onClick={() => retryUpload(fileItem.id)}
-                          variant="ghost"
-                          size="icon"
-                          className="text-muted-foreground size-6 hover:bg-transparent hover:opacity-100"
-                        >
-                          <RefreshCwIcon  className="size-3.5" />
-                        </Button>
-                      </AlertAction>
-                    </Alert>
-                  )}
-                </div>
-              </div>
-            </div>
+              <Button
+                size="icon"
+                variant="outline"
+                onClick={() => removeImage(img.id)}
+                className="absolute top-2 right-2 opacity-0 group-hover:opacity-100"
+              >
+                <XIcon className="size-4" />
+              </Button>
+            </Card>
           ))}
         </div>
       )}
 
-      {/* Error Messages */}
-      {errors.length > 0 && (
-        <Alert variant="destructive" className="mt-5">
-          <CircleAlertIcon />
-          <AlertTitle>File upload error(s)</AlertTitle>
-          <AlertDescription>
-            {errors.map((error, index) => (
-              <p key={index} className="last:mb-0">
-                {error}
-              </p>
-            ))}
-          </AlertDescription>
-        </Alert>
-      )}
+      <Card
+        className="border-dashed cursor-pointer"
+        onDrop={handleDrop}
+        onDragOver={(e) => e.preventDefault()}
+      >
+        <CardContent className="text-center py-8">
+          <CloudUpload className="mx-auto mb-3" />
+          <p className="text-sm mb-3">Drag & drop images or click browse</p>
+
+          <Button type="button" size="sm" onClick={openFileDialog}>
+            Browse Files
+          </Button>
+        </CardContent>
+      </Card>
     </div>
-  )
+  );
 }
